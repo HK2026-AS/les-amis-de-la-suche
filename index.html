@@ -43,46 +43,421 @@ dialog{border:0;border-radius:20px;padding:0;width:min(570px,calc(100vw - 28px))
 <dialog id="reservationDialog" aria-labelledby="dialogTitle"><form class="modal" id="reservationForm" novalidate><h2 id="dialogTitle">Nouvelle réservation</h2><div class="dialog-date" id="dialogDate"></div><div class="form-grid"><label>Nom du client<input id="clientInput" required maxlength="100" autocomplete="name" placeholder="Jean Dupont"></label><label>Téléphone<input id="phoneInput" maxlength="40" autocomplete="tel" placeholder="06 00 00 00 00"></label><label>Tables<input id="tablesInput" type="number" min="0" step="1" value="5" inputmode="numeric"></label><label>Bancs<input id="bancsInput" type="number" min="0" step="1" value="10" inputmode="numeric"></label><label>Tonnelles<input id="tonnellesInput" type="number" min="0" step="1" value="1" inputmode="numeric"></label></div><p class="availability" id="availability" aria-live="polite"></p><div class="modal-actions"><button type="button" class="secondary" id="cancelButton">Annuler</button><button type="submit">Enregistrer</button></div></form></dialog>
 <dialog id="stockDialog" aria-labelledby="stockDialogTitle"><form class="modal" id="stockForm" novalidate><h2 id="stockDialogTitle">Régler le stock</h2><p class="help">Ces quantités représentent le matériel total disponible et sont enregistrées dans ce navigateur.</p><div class="form-grid"><label>Tables<input id="stockTablesInput" type="number" min="0" step="1" inputmode="numeric" required></label><label>Bancs<input id="stockBancsInput" type="number" min="0" step="1" inputmode="numeric" required></label><label>Tonnelles<input id="stockTonnellesInput" type="number" min="0" step="1" inputmode="numeric" required></label></div><p class="availability" id="stockWarning" aria-live="polite" hidden></p><div class="modal-actions"><button type="button" class="secondary" id="stockCancelButton">Annuler</button><button type="submit">Enregistrer le stock</button></div></form></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script>
 "use strict";
-const STORAGE_KEY="las_reservations_v04";
-const STOCK_KEY="las_stock_v04";
-const $=id=>document.getElementById(id);
-let reservations=loadData(),stockTotal=loadStock(),currentDate=firstOfMonth(new Date()),selectedDate=null,editingId=null;
-function firstOfMonth(date){return new Date(date.getFullYear(),date.getMonth(),1)}
-function loadData(){try{const value=JSON.parse(localStorage.getItem(STORAGE_KEY));return Array.isArray(value)?value.filter(isReservation):[]}catch{return []}}
-function loadStock(){try{const value=JSON.parse(localStorage.getItem(STOCK_KEY));if(value&&["tables","bancs","tonnelles"].every(key=>Number.isInteger(value[key])&&value[key]>=0))return value}catch{}return {tables:20,bancs:40,tonnelles:3}}
-function isReservation(r){return r&&typeof r.id==="string"&&typeof r.client==="string"&&Number.isInteger(r.jour)&&Number.isInteger(r.mois)&&Number.isInteger(r.annee)}
-function saveData(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(reservations))}catch{notify("Impossible d’enregistrer les données dans ce navigateur.")}}
-function saveStock(){try{localStorage.setItem(STOCK_KEY,JSON.stringify(stockTotal))}catch{notify("Impossible d’enregistrer le stock dans ce navigateur.")}}
-function notify(message){const el=$("toast");el.textContent=message;el.classList.add("show");clearTimeout(notify.timer);notify.timer=setTimeout(()=>el.classList.remove("show"),3000)}
-function dateKey(date){return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
-function sameDate(r,date){return r.jour===date.getDate()&&r.mois===date.getMonth()&&r.annee===date.getFullYear()}
-function reservationsForDate(date,excludeId=null){return reservations.filter(r=>sameDate(r,date)&&r.id!==excludeId)}
-function remainingForDate(date,excludeId=null){const used=reservationsForDate(date,excludeId).reduce((sum,r)=>({tables:sum.tables+number(r.tables),bancs:sum.bancs+number(r.bancs),tonnelles:sum.tonnelles+number(r.tonnelles)}),{tables:0,bancs:0,tonnelles:0});return {tables:stockTotal.tables-used.tables,bancs:stockTotal.bancs-used.bancs,tonnelles:stockTotal.tonnelles-used.tonnelles}}
-function number(value){const n=Number(value);return Number.isFinite(n)&&n>=0?Math.floor(n):0}
-function statusForDate(date){const rem=remainingForDate(date);if(rem.tables<=0||rem.bancs<=0||rem.tonnelles<=0)return {cls:"full",text:"🔴 Matériel indisponible"};if(rem.tables<stockTotal.tables||rem.bancs<stockTotal.bancs||rem.tonnelles<stockTotal.tonnelles)return {cls:"partial",text:"🟠 Réservé"};return {cls:"free",text:"🟢 Disponible"}}
-function renderStock(){$("stockTables").textContent=stockTotal.tables;$("stockBancs").textContent=stockTotal.bancs;$("stockTonnelles").textContent=stockTotal.tonnelles}
-function formatDate(date,long=false){return date.toLocaleDateString("fr-FR",long?{weekday:"long",day:"numeric",month:"long",year:"numeric"}:{day:"2-digit",month:"2-digit",year:"numeric"})}
-function renderCalendar(){const year=currentDate.getFullYear(),month=currentDate.getMonth();$("monthTitle").textContent="📅 "+currentDate.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});const calendar=$("calendar");calendar.replaceChildren();["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].forEach(text=>{const d=document.createElement("div");d.className="weekday";d.textContent=text;calendar.append(d)});let start=new Date(year,month,1).getDay();start=start===0?7:start;for(let i=1;i<start;i++){const blank=document.createElement("div");blank.className="day empty";blank.setAttribute("aria-hidden","true");calendar.append(blank)}const today=new Date();const days=new Date(year,month+1,0).getDate();for(let day=1;day<=days;day++){const date=new Date(year,month,day),state=statusForDate(date),count=reservationsForDate(date).length,button=document.createElement("button");button.type="button";button.className=`day ${state.cls}${dateKey(date)===dateKey(today)?" today":""}`;button.setAttribute("aria-label",`${formatDate(date,true)} : ${state.text.replace(/^.. /,"")}${count?`, ${count} réservation${count>1?"s":""}`:""}`);const n=document.createElement("span");n.className="day-number";n.textContent=day;const s=document.createElement("span");s.className="day-status";s.textContent=state.text;const c=document.createElement("span");c.className="day-count";c.textContent=count?`${count} résa.`:"";button.append(n,s,c);button.addEventListener("click",()=>openDialog(date));calendar.append(button)}}
-function badgeForReservation(r){const state=statusForDate(new Date(r.annee,r.mois,r.jour));return `<span class="badge ${state.cls}">${state.cls==="full"?"Complet":state.cls==="partial"?"Réservé":"Libre"}</span>`}
-function renderReservations(){const q=$("searchInput").value.trim().toLocaleLowerCase("fr-FR"),body=$("reservationBody");const list=[...reservations].sort((a,b)=>new Date(a.annee,a.mois,a.jour)-new Date(b.annee,b.mois,b.jour)||a.id.localeCompare(b.id)).filter(r=>[r.id,r.client,r.phone||""].some(v=>String(v).toLocaleLowerCase("fr-FR").includes(q)));body.replaceChildren();if(!list.length){const row=document.createElement("tr");const cell=document.createElement("td");cell.colSpan=6;cell.className="empty-state";cell.textContent=q?"Aucune réservation ne correspond à la recherche.":"Aucune réservation pour le moment.";row.append(cell);body.append(row);return}list.forEach(r=>{const row=document.createElement("tr");const values=[r.id,r.client,formatDate(new Date(r.annee,r.mois,r.jour)),`T ${number(r.tables)} · B ${number(r.bancs)} · To ${number(r.tonnelles)}`];values.forEach((value,index)=>{const cell=document.createElement("td");cell.textContent=value;if(index===0)cell.style.fontWeight="700";row.append(cell)});const status=document.createElement("td");status.innerHTML=badgeForReservation(r);row.append(status);const actions=document.createElement("td");actions.className="actions";const edit=actionButton("✏️","Modifier",()=>editReservation(r.id),"secondary");const remove=actionButton("🗑️","Supprimer",()=>deleteReservation(r.id),"danger");actions.append(edit,remove);row.append(actions);body.append(row)})}
-function actionButton(icon,label,action,className){const button=document.createElement("button");button.type="button";button.className=`icon ${className}`;button.textContent=icon;button.title=label;button.setAttribute("aria-label",label);button.addEventListener("click",action);return button}
-function changeMonth(delta){currentDate=new Date(currentDate.getFullYear(),currentDate.getMonth()+delta,1);renderCalendar()}
-function openDialog(date){selectedDate=new Date(date);editingId=null;$("dialogTitle").textContent="Nouvelle réservation";$("dialogDate").textContent="Date : "+formatDate(date,true);$("clientInput").value="";$("phoneInput").value="";$("tablesInput").value=5;$("bancsInput").value=10;$("tonnellesInput").value=1;updateAvailability();showDialog()}
-function showDialog(){const dialog=$("reservationDialog");if(!dialog.open)dialog.showModal();$("clientInput").focus()}
-function closeDialog(){if($("reservationDialog").open)$("reservationDialog").close()}
-function requested(){return {tables:number($("tablesInput").value),bancs:number($("bancsInput").value),tonnelles:number($("tonnellesInput").value)}}
-function updateAvailability(){if(!selectedDate)return;const rem=remainingForDate(selectedDate,editingId),req=requested(),enough=req.tables<=rem.tables&&req.bancs<=rem.bancs&&req.tonnelles<=rem.tonnelles;const el=$("availability");el.classList.toggle("error",!enough);el.innerHTML=`Disponibles : <strong>${rem.tables}</strong> tables, <strong>${rem.bancs}</strong> bancs, <strong>${rem.tonnelles}</strong> tonnelles.${enough?"":" Stock insuffisant pour cette réservation."}`}
-function nextId(date){const prefix=`LAS-${date.getFullYear()}-`;const highest=reservations.reduce((max,r)=>{const match=new RegExp(`^${prefix}(\\d+)$`).exec(r.id);return match?Math.max(max,Number(match[1])):max},0);return `${prefix}${String(highest+1).padStart(4,"0")}`}
-$("reservationForm").addEventListener("submit",event=>{event.preventDefault();const client=$("clientInput").value.trim(),phone=$("phoneInput").value.trim(),materials=requested(),rem=remainingForDate(selectedDate,editingId);if(!client){$("clientInput").focus();return}if(Object.values(materials).some(v=>!Number.isInteger(v)||v<0)){notify("Les quantités doivent être des nombres entiers positifs ou nuls.");return}if(materials.tables>rem.tables||materials.bancs>rem.bancs||materials.tonnelles>rem.tonnelles){updateAvailability();notify("Le stock est insuffisant pour cette date.");return}const id=editingId||nextId(selectedDate);reservations=reservations.filter(r=>r.id!==editingId);reservations.push({id,client,phone,jour:selectedDate.getDate(),mois:selectedDate.getMonth(),annee:selectedDate.getFullYear(),...materials});saveData();closeDialog();renderCalendar();renderReservations();notify(editingId?"Réservation mise à jour.":"Réservation enregistrée.")});
-function editReservation(id){const r=reservations.find(item=>item.id===id);if(!r)return;selectedDate=new Date(r.annee,r.mois,r.jour);editingId=id;$("dialogTitle").textContent="Modifier la réservation";$("dialogDate").textContent="Date : "+formatDate(selectedDate,true);$("clientInput").value=r.client;$("phoneInput").value=r.phone||"";$("tablesInput").value=number(r.tables);$("bancsInput").value=number(r.bancs);$("tonnellesInput").value=number(r.tonnelles);updateAvailability();showDialog()}
-function deleteReservation(id){const r=reservations.find(item=>item.id===id);if(!r)return;if(!confirm(`Supprimer la réservation ${r.id} de ${r.client} ?`))return;reservations=reservations.filter(item=>item.id!==id);saveData();renderCalendar();renderReservations();notify("Réservation supprimée.")}
-function exportCSV(){if(!reservations.length){notify("Aucune réservation à exporter.");return}const rows=[["ID","Client","Téléphone","Date","Tables","Bancs","Tonnelles"],...[...reservations].sort((a,b)=>new Date(a.annee,a.mois,a.jour)-new Date(b.annee,b.mois,b.jour)).map(r=>[r.id,r.client,r.phone||"",formatDate(new Date(r.annee,r.mois,r.jour)),number(r.tables),number(r.bancs),number(r.tonnelles)])];const csv="\uFEFF"+rows.map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(";")).join("\r\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const link=document.createElement("a");link.href=url;link.download="reservations_amis_de_la_suche.csv";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);notify("Export CSV téléchargé.")}
-function openStockDialog(){$("stockTablesInput").value=stockTotal.tables;$("stockBancsInput").value=stockTotal.bancs;$("stockTonnellesInput").value=stockTotal.tonnelles;$("stockWarning").hidden=true;const dialog=$("stockDialog");if(!dialog.open)dialog.showModal();$("stockTablesInput").focus()}
-function closeStockDialog(){if($("stockDialog").open)$("stockDialog").close()}
-$("stockForm").addEventListener("submit",event=>{event.preventDefault();const next={tables:number($("stockTablesInput").value),bancs:number($("stockBancsInput").value),tonnelles:number($("stockTonnellesInput").value)};const invalid=Object.values(next).some(value=>!Number.isInteger(value)||value<0);if(invalid){const warning=$("stockWarning");warning.hidden=false;warning.textContent="Saisissez des quantités entières positives ou nulles.";return}stockTotal=next;saveStock();closeStockDialog();renderStock();renderCalendar();renderReservations();if(selectedDate)updateAvailability();notify("Stock mis à jour.")});
 
+/* =========================
+   SUPABASE
+   ========================= */
+const SUPABASE_URL = "https://gvrigsvwmqclwjxbwmpy.supabase.co";
+const SUPABASE_KEY = "sb_publishable_XCU-0-WMqWfhSR-u-0Acsg_HExQpwP_";
+
+async function supabase(path, options = {}) {
+  const headers = {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+    "Content-Type": "application/json",
+    ...options.headers
+  };
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers
+  });
+  const text = await response.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch {}
+  if (!response.ok) {
+    const message = data?.message || data?.hint || text || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return data;
+}
+
+const $ = id => document.getElementById(id);
+let reservations = [];
+let stockTotal = {tables:20,bancs:40,tonnelles:3};
+let stockRows = {};
+let currentDate = firstOfMonth(new Date());
+let selectedDate = null;
+let editingId = null;
+
+function firstOfMonth(date){ return new Date(date.getFullYear(), date.getMonth(), 1); }
+
+function notify(message){
+  const el=$("toast");
+  el.textContent=message;
+  el.classList.add("show");
+  clearTimeout(notify.timer);
+  notify.timer=setTimeout(()=>el.classList.remove("show"),3000);
+}
+
+function number(value){
+  const n=Number(value);
+  return Number.isFinite(n)&&n>=0?Math.floor(n):0;
+}
+
+function formatDate(date,long=false){
+  return date.toLocaleDateString("fr-FR",long?
+    {weekday:"long",day:"numeric",month:"long",year:"numeric"}:
+    {day:"2-digit",month:"2-digit",year:"numeric"});
+}
+
+function dateKey(date){
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function sameDate(r,date){
+  return r.jour===date.getDate()&&r.mois===date.getMonth()&&r.annee===date.getFullYear();
+}
+
+function reservationFromRow(row){
+  const d = new Date(`${row.date_debut}T12:00:00`);
+  let materials = {};
+  try { materials = typeof row.materiel === "string" ? JSON.parse(row.materiel) : (row.materiel || {}); } catch {}
+  return {
+    id: String(row.id),
+    client: row.nom || "",
+    phone: row.email || "",
+    jour: d.getDate(),
+    mois: d.getMonth(),
+    annee: d.getFullYear(),
+    tables: number(materials.tables),
+    bancs: number(materials.bancs),
+    tonnelles: number(materials.tonnelles),
+    statut: row.statut || "active"
+  };
+}
+
+async function loadReservations(){
+  const rows = await supabase("reservations?select=*&order=date_debut.asc", {
+    headers: {"Cache-Control":"no-cache"}
+  });
+  reservations = (rows || []).filter(r => r.statut !== "deleted").map(reservationFromRow);
+}
+
+function stockValue(rows, label, fallback){
+  const row = (rows || []).find(r => String(r.nom || "").trim().toLocaleLowerCase("fr-FR") === label.toLocaleLowerCase("fr-FR"));
+  if (!row) return fallback;
+  return number(row.quantite);
+}
+
+async function loadStock(){
+  const rows = await supabase("materiels?select=*&order=nom.asc");
+  stockRows = {};
+  (rows || []).forEach(r => {
+    const key = String(r.nom || "").trim().toLocaleLowerCase("fr-FR");
+    if(key) stockRows[key] = r;
+  });
+  stockTotal = {
+    tables: stockValue(rows,"Tables",20),
+    bancs: stockValue(rows,"Bancs",40),
+    tonnelles: stockValue(rows,"Tonnelles",3)
+  };
+}
+
+async function ensureStockRow(name, quantity){
+  const key=name.toLocaleLowerCase("fr-FR");
+  const existing=stockRows[key];
+  if(existing){
+    await supabase(`materiels?id=eq.${encodeURIComponent(existing.id)}`, {
+      method:"PATCH",
+      headers:{"Prefer":"return=minimal"},
+      body:JSON.stringify({quantite:quantity,disponible:quantity>0})
+    });
+    existing.quantite=quantity;
+    existing.disponible=quantity>0;
+  }else{
+    const created=await supabase("materiels",{
+      method:"POST",
+      headers:{"Prefer":"return=representation"},
+      body:JSON.stringify({nom:name,categorie:"",quantite:quantity,disponible:quantity>0})
+    });
+    const row=Array.isArray(created)?created[0]:created;
+    if(row) stockRows[key]=row;
+  }
+}
+
+async function saveStockRemote(next){
+  await ensureStockRow("Tables",next.tables);
+  await ensureStockRow("Bancs",next.bancs);
+  await ensureStockRow("Tonnelles",next.tonnelles);
+  stockTotal=next;
+}
+
+function reservationsForDate(date,excludeId=null){
+  return reservations.filter(r=>sameDate(r,date)&&r.id!==String(excludeId));
+}
+
+function remainingForDate(date,excludeId=null){
+  const used=reservationsForDate(date,excludeId).reduce((sum,r)=>({
+    tables:sum.tables+number(r.tables),
+    bancs:sum.bancs+number(r.bancs),
+    tonnelles:sum.tonnelles+number(r.tonnelles)
+  }),{tables:0,bancs:0,tonnelles:0});
+  return {
+    tables:stockTotal.tables-used.tables,
+    bancs:stockTotal.bancs-used.bancs,
+    tonnelles:stockTotal.tonnelles-used.tonnelles
+  };
+}
+
+function statusForDate(date){
+  const rem=remainingForDate(date);
+  if(rem.tables<=0||rem.bancs<=0||rem.tonnelles<=0)
+    return {cls:"full",text:"🔴 Matériel indisponible"};
+  if(rem.tables<stockTotal.tables||rem.bancs<stockTotal.bancs||rem.tonnelles<stockTotal.tonnelles)
+    return {cls:"partial",text:"🟠 Réservé"};
+  return {cls:"free",text:"🟢 Disponible"};
+}
+
+function renderStock(){
+  $("stockTables").textContent=stockTotal.tables;
+  $("stockBancs").textContent=stockTotal.bancs;
+  $("stockTonnelles").textContent=stockTotal.tonnelles;
+}
+
+function renderCalendar(){
+  const year=currentDate.getFullYear(),month=currentDate.getMonth();
+  $("monthTitle").textContent="📅 "+currentDate.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  const calendar=$("calendar");
+  calendar.replaceChildren();
+  ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].forEach(text=>{
+    const d=document.createElement("div");
+    d.className="weekday"; d.textContent=text; calendar.append(d);
+  });
+  let start=new Date(year,month,1).getDay();
+  start=start===0?7:start;
+  for(let i=1;i<start;i++){
+    const blank=document.createElement("div");
+    blank.className="day empty"; blank.setAttribute("aria-hidden","true"); calendar.append(blank);
+  }
+  const today=new Date();
+  const days=new Date(year,month+1,0).getDate();
+  for(let day=1;day<=days;day++){
+    const date=new Date(year,month,day),state=statusForDate(date),count=reservationsForDate(date).length;
+    const button=document.createElement("button");
+    button.type="button";
+    button.className=`day ${state.cls}${dateKey(date)===dateKey(today)?" today":""}`;
+    button.setAttribute("aria-label",`${formatDate(date,true)} : ${state.text.replace(/^.. /,"")}${count?`, ${count} réservation${count>1?"s":""}`:""}`);
+    const n=document.createElement("span"); n.className="day-number"; n.textContent=day;
+    const s=document.createElement("span"); s.className="day-status"; s.textContent=state.text;
+    const c=document.createElement("span"); c.className="day-count"; c.textContent=count?`${count} résa.`:"";
+    button.append(n,s,c);
+    button.addEventListener("click",()=>openDialog(date));
+    calendar.append(button);
+  }
+}
+
+function displayId(r){
+  const d=`${r.annee}${String(r.mois+1).padStart(2,"0")}${String(r.jour).padStart(2,"0")}`;
+  return `LAS-${d}-${String(r.id).slice(-4)}`;
+}
+
+function badgeForReservation(r){
+  const state=statusForDate(new Date(r.annee,r.mois,r.jour));
+  return `<span class="badge ${state.cls}">${state.cls==="full"?"Matériel indisponible":state.cls==="partial"?"Réservé":"Disponible"}</span>`;
+}
+
+function renderReservations(){
+  const q=$("searchInput").value.trim().toLocaleLowerCase("fr-FR"),body=$("reservationBody");
+  const list=[...reservations]
+    .sort((a,b)=>new Date(a.annee,a.mois,a.jour)-new Date(b.annee,b.mois,b.jour)||a.id.localeCompare(b.id))
+    .filter(r=>[displayId(r),r.client,r.phone||""].some(v=>String(v).toLocaleLowerCase("fr-FR").includes(q)));
+  body.replaceChildren();
+  if(!list.length){
+    const row=document.createElement("tr"),cell=document.createElement("td");
+    cell.colSpan=6;cell.className="empty-state";
+    cell.textContent=q?"Aucune réservation ne correspond à la recherche.":"Aucune réservation pour le moment.";
+    row.append(cell);body.append(row);return;
+  }
+  list.forEach(r=>{
+    const row=document.createElement("tr");
+    const values=[displayId(r),r.client,formatDate(new Date(r.annee,r.mois,r.jour)),`T ${number(r.tables)} · B ${number(r.bancs)} · To ${number(r.tonnelles)}`];
+    values.forEach((value,index)=>{
+      const cell=document.createElement("td");cell.textContent=value;
+      if(index===0)cell.style.fontWeight="700";row.append(cell);
+    });
+    const status=document.createElement("td");status.innerHTML=badgeForReservation(r);row.append(status);
+    const actions=document.createElement("td");actions.className="actions";
+    actions.append(
+      actionButton("✏️","Modifier",()=>editReservation(r.id),"secondary"),
+      actionButton("🗑️","Supprimer",()=>deleteReservation(r.id),"danger")
+    );
+    row.append(actions);body.append(row);
+  });
+}
+
+function actionButton(icon,label,action,className){
+  const button=document.createElement("button");
+  button.type="button";button.className=`icon ${className}`;
+  button.textContent=icon;button.title=label;button.setAttribute("aria-label",label);
+  button.addEventListener("click",action);return button;
+}
+
+function changeMonth(delta){
+  currentDate=new Date(currentDate.getFullYear(),currentDate.getMonth()+delta,1);
+  renderCalendar();
+}
+
+function openDialog(date){
+  selectedDate=new Date(date);editingId=null;
+  $("dialogTitle").textContent="Nouvelle réservation";
+  $("dialogDate").textContent="Date : "+formatDate(date,true);
+  $("clientInput").value="";$("phoneInput").value="";
+  $("tablesInput").value=5;$("bancsInput").value=10;$("tonnellesInput").value=1;
+  updateAvailability();showDialog();
+}
+
+function showDialog(){
+  const dialog=$("reservationDialog");
+  if(!dialog.open)dialog.showModal();
+  $("clientInput").focus();
+}
+
+function closeDialog(){if($("reservationDialog").open)$("reservationDialog").close()}
+
+function requested(){
+  return {
+    tables:number($("tablesInput").value),
+    bancs:number($("bancsInput").value),
+    tonnelles:number($("tonnellesInput").value)
+  };
+}
+
+function updateAvailability(){
+  if(!selectedDate)return;
+  const rem=remainingForDate(selectedDate,editingId),req=requested();
+  const enough=req.tables<=rem.tables&&req.bancs<=rem.bancs&&req.tonnelles<=rem.tonnelles;
+  const el=$("availability");
+  el.classList.toggle("error",!enough);
+  el.innerHTML=`Disponibles : <strong>${rem.tables}</strong> tables, <strong>${rem.bancs}</strong> bancs, <strong>${rem.tonnelles}</strong> tonnelles.${enough?"":" Stock insuffisant pour cette réservation."}`;
+}
+
+async function createRemoteReservation(client,phone,date,materials){
+  const row={
+    nom:client,
+    email:phone,
+    date_debut:`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`,
+    date_fin:`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`,
+    materiel:JSON.stringify(materials),
+    statut:"active"
+  };
+  const created=await supabase("reservations",{
+    method:"POST",
+    headers:{"Prefer":"return=representation"},
+    body:JSON.stringify(row)
+  });
+  return Array.isArray(created)?created[0]:created;
+}
+
+async function updateRemoteReservation(id,client,phone,date,materials){
+  const row={
+    nom:client,
+    email:phone,
+    date_debut:`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`,
+    date_fin:`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`,
+    materiel:JSON.stringify(materials),
+    statut:"active"
+  };
+  await supabase(`reservations?id=eq.${encodeURIComponent(id)}`,{
+    method:"PATCH",
+    headers:{"Prefer":"return=minimal"},
+    body:JSON.stringify(row)
+  });
+}
+
+$("reservationForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const client=$("clientInput").value.trim(),phone=$("phoneInput").value.trim(),materials=requested();
+  const rem=remainingForDate(selectedDate,editingId);
+  if(!client){$("clientInput").focus();return}
+  if(Object.values(materials).some(v=>!Number.isInteger(v)||v<0)){
+    notify("Les quantités doivent être des nombres entiers positifs ou nuls.");return;
+  }
+  if(materials.tables>rem.tables||materials.bancs>rem.bancs||materials.tonnelles>rem.tonnelles){
+    updateAvailability();notify("Le stock est insuffisant pour cette date.");return;
+  }
+  const submit=event.submitter;
+  if(submit)submit.disabled=true;
+  try{
+    if(editingId){
+      await updateRemoteReservation(editingId,client,phone,selectedDate,materials);
+      notify("Réservation mise à jour.");
+    }else{
+      await createRemoteReservation(client,phone,selectedDate,materials);
+      notify("Réservation enregistrée.");
+    }
+    await loadReservations();
+    closeDialog();renderCalendar();renderReservations();
+  }catch(error){
+    console.error(error);
+    notify("Erreur Supabase : "+error.message);
+  }finally{
+    if(submit)submit.disabled=false;
+  }
+});
+
+function editReservation(id){
+  const r=reservations.find(item=>item.id===String(id));if(!r)return;
+  selectedDate=new Date(r.annee,r.mois,r.jour);editingId=String(id);
+  $("dialogTitle").textContent="Modifier la réservation";
+  $("dialogDate").textContent="Date : "+formatDate(selectedDate,true);
+  $("clientInput").value=r.client;$("phoneInput").value=r.phone||"";
+  $("tablesInput").value=number(r.tables);$("bancsInput").value=number(r.bancs);$("tonnellesInput").value=number(r.tonnelles);
+  updateAvailability();showDialog();
+}
+
+async function deleteReservation(id){
+  const r=reservations.find(item=>item.id===String(id));if(!r)return;
+  if(!confirm(`Supprimer la réservation ${displayId(r)} de ${r.client} ?`))return;
+  try{
+    await supabase(`reservations?id=eq.${encodeURIComponent(id)}`,{method:"DELETE",headers:{"Prefer":"return=minimal"}});
+    await loadReservations();renderCalendar();renderReservations();notify("Réservation supprimée.");
+  }catch(error){
+    console.error(error);notify("Erreur Supabase : "+error.message);
+  }
+}
+
+function exportCSV(){
+  if(!reservations.length){notify("Aucune réservation à exporter.");return}
+  const rows=[["ID","Client","Téléphone","Date","Tables","Bancs","Tonnelles"],
+    ...[...reservations].sort((a,b)=>new Date(a.annee,a.mois,a.jour)-new Date(b.annee,b.mois,b.jour))
+    .map(r=>[displayId(r),r.client,r.phone||"",formatDate(new Date(r.annee,r.mois,r.jour)),number(r.tables),number(r.bancs),number(r.tonnelles)])];
+  const csv="\uFEFF"+rows.map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(";")).join("\r\n");
+  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+  const link=document.createElement("a");link.href=url;link.download="reservations_amis_de_la_suche.csv";
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);
+  notify("Export CSV téléchargé.");
+}
+
+function openStockDialog(){
+  $("stockTablesInput").value=stockTotal.tables;$("stockBancsInput").value=stockTotal.bancs;$("stockTonnellesInput").value=stockTotal.tonnelles;
+  $("stockWarning").hidden=true;
+  const dialog=$("stockDialog");if(!dialog.open)dialog.showModal();$("stockTablesInput").focus();
+}
+
+function closeStockDialog(){if($("stockDialog").open)$("stockDialog").close()}
+
+$("stockForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const next={tables:number($("stockTablesInput").value),bancs:number($("stockBancsInput").value),tonnelles:number($("stockTonnellesInput").value)};
+  const invalid=Object.values(next).some(value=>!Number.isInteger(value)||value<0);
+  if(invalid){
+    const warning=$("stockWarning");warning.hidden=false;warning.textContent="Saisissez des quantités entières positives ou nulles.";return;
+  }
+  const submit=event.submitter;if(submit)submit.disabled=true;
+  try{
+    await saveStockRemote(next);closeStockDialog();renderStock();renderCalendar();renderReservations();
+    if(selectedDate)updateAvailability();notify("Stock mis à jour pour tous les utilisateurs.");
+  }catch(error){
+    console.error(error);notify("Erreur Supabase : "+error.message);
+  }finally{if(submit)submit.disabled=false}
+});
+
+/* =========================
+   CONNEXION LOCALE
+   ========================= */
 const AUTH_KEY="las_auth_v04";
 const LOGIN_USER="admin";
 const LOGIN_PASSWORD="admin";
@@ -92,33 +467,85 @@ function showLogin(){
   $("app").classList.add("locked");
   $("loginUser").focus();
 }
+
 function hideLogin(){
   $("loginOverlay").style.display="none";
   $("app").classList.remove("locked");
 }
+
 $("loginForm").addEventListener("submit",function(event){
   event.preventDefault();
-  const user=$("loginUser").value.trim();
-  const pass=$("loginPassword").value;
-  if(user===LOGIN_USER && pass===LOGIN_PASSWORD){
+  const user=$("loginUser").value.trim(),pass=$("loginPassword").value;
+  if(user===LOGIN_USER&&pass===LOGIN_PASSWORD){
     try{localStorage.setItem(AUTH_KEY,"1")}catch{}
-    $("loginError").classList.remove("show");
-    hideLogin();
-    notify("Connexion réussie.");
+    $("loginError").classList.remove("show");hideLogin();notify("Connexion réussie.");
   }else{
-    $("loginError").classList.add("show");
-    $("loginPassword").select();
+    $("loginError").classList.add("show");$("loginPassword").select();
   }
 });
+
 $("logoutButton").addEventListener("click",function(){
   try{localStorage.removeItem(AUTH_KEY)}catch{}
-  $("loginUser").value="";
-  $("loginPassword").value="";
-  showLogin();
+  $("loginUser").value="";$("loginPassword").value="";showLogin();
 });
 
-$("previousMonth").addEventListener("click",()=>changeMonth(-1));$("nextMonth").addEventListener("click",()=>changeMonth(1));$("todayButton").addEventListener("click",()=>{currentDate=firstOfMonth(new Date());renderCalendar()});$("exportButton").addEventListener("click",exportCSV);$("stockSettingsButton").addEventListener("click",openStockDialog);$("stockCancelButton").addEventListener("click",closeStockDialog);$("cancelButton").addEventListener("click",closeDialog);$("searchInput").addEventListener("input",renderReservations);["tablesInput","bancsInput","tonnellesInput"].forEach(id=>$(id).addEventListener("input",updateAvailability));$("reservationDialog").addEventListener("cancel",()=>{editingId=null});
-renderStock();renderCalendar();renderReservations();
-try{localStorage.getItem(AUTH_KEY)==="1"?hideLogin():showLogin()}catch{showLogin()}
+$("previousMonth").addEventListener("click",()=>changeMonth(-1));
+$("nextMonth").addEventListener("click",()=>changeMonth(1));
+$("todayButton").addEventListener("click",()=>{currentDate=firstOfMonth(new Date());renderCalendar()});
+$("exportButton").addEventListener("click",exportCSV);
+$("stockSettingsButton").addEventListener("click",openStockDialog);
+$("stockCancelButton").addEventListener("click",closeStockDialog);
+$("cancelButton").addEventListener("click",closeDialog);
+$("searchInput").addEventListener("input",renderReservations);
+["tablesInput","bancsInput","tonnellesInput"].forEach(id=>$(id).addEventListener("input",updateAvailability));
+$("reservationDialog").addEventListener("cancel",()=>{editingId=null});
+
+let refreshInProgress = false;
+let refreshTimer = null;
+
+async function refreshFromSupabase(showError = false){
+  if(refreshInProgress) return;
+  refreshInProgress = true;
+  try{
+    await Promise.all([loadReservations(), loadStock()]);
+    renderStock();
+    renderCalendar();
+    renderReservations();
+  }catch(error){
+    console.error("Synchronisation Supabase :", error);
+    if(showError) notify("Synchronisation impossible : " + error.message);
+  }finally{
+    refreshInProgress = false;
+  }
+}
+
+function startAutoSync(){
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => refreshFromSupabase(false), 10000);
+
+  document.addEventListener("visibilitychange", () => {
+    if(document.visibilityState === "visible"){
+      refreshFromSupabase(false);
+    }
+  });
+
+  window.addEventListener("focus", () => refreshFromSupabase(false));
+}
+
+async function init(){
+  renderStock();renderCalendar();renderReservations();
+  try{
+    await Promise.all([loadReservations(),loadStock()]);
+    renderStock();renderCalendar();renderReservations();
+    startAutoSync();
+  }catch(error){
+    console.error(error);
+    notify("Impossible de charger Supabase : "+error.message);
+  }
+  try{localStorage.getItem(AUTH_KEY)==="1"?hideLogin():showLogin()}catch{showLogin()}
+}
+
+init();
 </script>
+
 </body></html>
