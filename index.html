@@ -484,6 +484,28 @@ function hideLogin(){
 
 $("loginForm").addEventListener("submit",function(event){
   event.preventDefault();
+
+  const user = $("loginUser").value.trim();
+  const pass = $("loginPassword").value;
+
+  if(user === "admin" && pass === "admin"){
+    $("loginError").classList.remove("show");
+
+    // Ouvre immédiatement l'application
+    $("loginOverlay").style.display = "none";
+    $("app").classList.remove("locked");
+
+    // Charge immédiatement les données Supabase
+    refreshFromSupabase(true);
+
+    notify("Connexion réussie.");
+  }else{
+    $("loginError").classList.add("show");
+    $("loginPassword").value = "";
+    $("loginPassword").focus();
+  }
+});
+  event.preventDefault();
   const user=$("loginUser").value.trim(),pass=$("loginPassword").value;
   if(user===LOGIN_USER&&pass===LOGIN_PASSWORD){
     try{localStorage.setItem(AUTH_KEY,"1")}catch{}
@@ -608,7 +630,6 @@ async function init(){
     console.error(error);
     notify("Impossible de charger Supabase : "+error.message);
   }
-  try{localStorage.getItem(AUTH_KEY)==="1"?hideLogin():showLogin()}catch{showLogin()}
 }
 
 init();
