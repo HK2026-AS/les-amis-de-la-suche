@@ -130,10 +130,19 @@ function reservationFromRow(row){
 }
 
 async function loadReservations(){
-  const rows = await supabase("reservation?select=*&order=date_debut.asc", {
-    headers: {"Cache-Control":"no-cache"}
-  });
-  reservations = (rows || []).filter(r => r.statut !== "deleted").map(reservationFromRow);
+  const rows = await supabase(
+    "reservation?select=id,created_at,materiel,nom,email,date_debut,date_fin,statut&order=date_debut.asc",
+    {
+      headers: {
+        "Cache-Control": "no-cache",
+        "Prefer": "count=exact"
+      }
+    }
+  );
+
+  reservations = (rows || [])
+    .filter(r => r.statut !== "deleted")
+    .map(reservationFromRow);
 }
 
 function stockValue(rows, label, fallback){
