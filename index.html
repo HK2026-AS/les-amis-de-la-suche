@@ -566,6 +566,39 @@ function startAutoSync(){
 }
 
 async function init(){
+  try{
+    const connected = localStorage.getItem(AUTH_KEY) === "1";
+
+    if(connected){
+      hideLogin();
+    }else{
+      showLogin();
+    }
+  }catch(error){
+    console.warn("Mémoire de connexion indisponible", error);
+    showLogin();
+  }
+
+  renderStock();
+  renderCalendar();
+  renderReservations();
+
+  try{
+    await Promise.all([
+      loadReservations(),
+      loadStock()
+    ]);
+
+    renderStock();
+    renderCalendar();
+    renderReservations();
+    startAutoSync();
+
+  }catch(error){
+    console.error("Erreur chargement Supabase :", error);
+    notify("Impossible de charger les données : " + error.message);
+  }
+}
   renderStock();renderCalendar();renderReservations();
   try{
     await Promise.all([loadReservations(),loadStock()]);
