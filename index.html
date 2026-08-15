@@ -530,6 +530,30 @@ async function refreshFromSupabase(showError = false){
 
 function startAutoSync(){
   clearInterval(refreshTimer);
+
+  // Synchronisation toutes les 3 secondes
+  refreshTimer = setInterval(async () => {
+    await refreshFromSupabase(false);
+  }, 3000);
+
+  // Recharge immédiatement quand on revient sur la page
+  document.addEventListener("visibilitychange", () => {
+    if(document.visibilityState === "visible"){
+      refreshFromSupabase(false);
+    }
+  });
+
+  // Recharge quand la fenêtre reprend le focus
+  window.addEventListener("focus", () => {
+    refreshFromSupabase(false);
+  });
+
+  // Recharge quand le téléphone revient en ligne
+  window.addEventListener("online", () => {
+    refreshFromSupabase(true);
+  });
+}
+  clearInterval(refreshTimer);
   refreshTimer = setInterval(() => refreshFromSupabase(false), 10000);
 
   document.addEventListener("visibilitychange", () => {
