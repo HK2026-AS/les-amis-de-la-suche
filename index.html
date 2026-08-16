@@ -5,39 +5,90 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Les Amis de la Suche</title>
 <style>
-body{font-family:system-ui;margin:0;background:#eef5e8}
-.login,.app{max-width:700px;margin:40px auto;background:#fff;padding:24px;border-radius:16px}
-input,button{width:100%;padding:12px;margin:8px 0}
-table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px}
+:root{--g:#55772a}
+body{margin:0;font-family:system-ui;background:#eef5e8}
+.login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#355016,#55772a)}
+.card{background:#fff;padding:28px;border-radius:18px;width:min(420px,92vw)}
+input,button{width:100%;padding:12px;margin-top:10px;font-size:16px}
+button{background:var(--g);color:#fff;border:0;border-radius:10px}
+#app{display:none;max-width:980px;margin:24px auto;padding:16px}
+table{width:100%;border-collapse:collapse;background:#fff}
+th,td{padding:10px;border:1px solid #ddd}
 </style>
 </head>
 <body>
-<div class="login" id="login">
-<h2>Connexion</h2>
-<input id="u" placeholder="Identifiant">
-<input id="p" type="password" placeholder="Mot de passe">
-<button onclick="login()">Se connecter</button>
-<p id="err" style="color:red"></p>
+<div class="login" id="loginOverlay">
+  <div class="card">
+    <h2>🐷 Les Amis de la Suche</h2>
+    <p>Connexion</p>
+    <input id="loginUser" placeholder="Identifiant">
+    <input id="loginPassword" type="password" placeholder="Mot de passe">
+    <button id="btnLogin">Se connecter</button>
+    <p id="err" style="color:#b00020"></p>
+    <small>admin / admin</small>
+  </div>
 </div>
-<div class="app" id="app" style="display:none">
-<h2>Réservations</h2>
-<p>Connexion réussie. Cette version est le point de départ pour la synchro Supabase.</p>
-<table><thead><tr><th>Client</th><th>Date</th><th>Matériel</th></tr></thead><tbody id="rows"></tbody></table>
+
+<div id="app">
+  <h2>Réservations</h2>
+  <button id="refresh">Actualiser</button>
+  <table>
+    <thead><tr><th>Client</th><th>Date</th><th>Matériel</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
 </div>
+
 <script>
-const URL="https://gvrigsvwmqclwjxbwmpy.supabase.co";
-const KEY="sb_publishable_XCU-0-WMqWfhSR-u-0Acsg_HExQpwP_";
+const SUPABASE_URL="https://gvrigsvwmqclwjxbwmpy.supabase.co";
+const SUPABASE_KEY="sb_publishable_XCU-0-WMqWfhSR-u-0Acsg_HExQpwP_";
+
 async function api(path,opt={}){
- const r=await fetch(URL+"/rest/v1/"+path,{...opt,headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=representation",...(opt.headers||{})}});
- if(!r.ok) throw new Error(await r.text()); return r.json();
+ const r=await fetch(SUPABASE_URL+"/rest/v1/"+path,{
+   ...opt,
+   headers:{
+     apikey:SUPABASE_KEY,
+     Authorization:"Bearer "+SUPABASE_KEY,
+     "Content-Type":"application/json",
+     "Cache-Control":"no-cache",
+     ...(opt.headers||{})
+   }
+ });
+ const t=await r.text();
+ if(!r.ok) throw new Error(t);
+ return t?JSON.parse(t):[];
 }
-async function load(){
+
+async function loadReservations(){
  const data=await api("reservation?select=nom,date_debut,materiel&order=date_debut.asc");
- const b=document.getElementById("rows"); b.innerHTML="";
- data.forEach(r=>{const m=JSON.parse(r.materiel||"{}"); b.innerHTML+=`<tr><td>${r.nom}</td><td>${r.date_debut}</td><td>T:${m.tables||0} B:${m.bancs||0} To:${m.tonnelles||0}</td></tr>`});
+ const tbody=document.getElementById("rows");
+ tbody.innerHTML="";
+ data.forEach(r=>{
+   let m={}; try{m=JSON.parse(r.materiel||"{}")}catch(e){}
+   const tr=document.createElement("tr");
+   tr.innerHTML=`<td>${r.nom||""}</td><td>${r.date_debut||""}</td><td>Tables ${m.tables||0} · Bancs ${m.bancs||0} · Tonnelles ${m.tonnelles||0}</td>`;
+   tbody.appendChild(tr);
+ });
 }
-function login(){
- if(u.value==="admin"&&p.value==="admin"){login.style.display="none";app.style.display="block";load();} else err.textContent="Identifiant ou mot de passe incorrect";
+
+async function enterApp(){
+ document.getElementById("loginOverlay").style.display="none";
+ document.getElementById("app").style.display="block";
+ await loadReservations();
+ setInterval(loadReservations,3000);
 }
+
+document.getElementById("btnLogin").onclick=async()=>{
+ const u=document.getElementById("loginUser").value.trim();
+ const p=document.getElementById("loginPassword").value;
+ if(u==="admin"&&p==="admin"){
+   document.getElementById("err").textContent="";
+   enterApp();
+ }else{
+   document.getElementById("err").textContent="Identifiant ou mot de passe incorrect";
+ }
+};
+
+document.getElementById("refresh").onclick=loadReservations;
 </script>
-</body></html>
+</body>
+</html>
